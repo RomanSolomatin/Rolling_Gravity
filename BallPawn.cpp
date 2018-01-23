@@ -92,21 +92,25 @@ void ABallPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// If the forward vector array has one or more vectors in it
+	// We need to calculate the average vector on the ball and normalise it so we can move in that direction
 	if (ForwardVectorArray.Num() >= 1)
 	{
-		//	for (int i = 0; i < ForwardVectorArray.Num(); i++)
-		//	{
-		//		ForwardVector += ForwardVectorArray[i];
-		//	}
-		//	ForwardVector /= ForwardVectorArray.Num();
-		//	ForwardVector.Normalize();
+			for (int i = 0; i < ForwardVectorArray.Num(); i++)
+			{
+				ForwardVector += ForwardVectorArray[i]; // Get sum of all vectors
+			}
+			ForwardVector /= ForwardVectorArray.Num(); // Get the average of forward vectors
+			ForwardVector.Normalize(); // Normalise the vector for movement
 
-		//	RightVector = MainCamera->GetRightVector();
-		//	RightVector.Normalize();
-		//}
+			// Get the right vector using the maing camera as it changes with perspective
+			RightVector = MainCamera->GetRightVector();
+			RightVector.Normalize(); // Normalise that vector incase it isn't already
+		}
 	}
 	else
 	{
+		// If the array is empty, then we use the facing arrow to get our movement directions
 		ForwardVector = FacingArrow->GetForwardVector();
 		ForwardVector.Z = 0.0f;
 		RightVector = FacingArrow->GetRightVector();
@@ -117,29 +121,33 @@ void ABallPawn::Tick(float DeltaTime)
 void ABallPawn::SetupPlayerInputComponent(class UInputComponent* InputComponent)
 {
 	Super::SetupPlayerInputComponent(InputComponent);
-
+	// Bind movement axis to their functions
 	InputComponent->BindAxis("MoveForward", this, &ABallPawn::MoveForward);
 	InputComponent->BindAxis("MoveRight", this, &ABallPawn::MoveRight);
 	InputComponent->BindAxis("Turn", this, &ABallPawn::Turn);
 	InputComponent->BindAxis("Tilt", this, &ABallPawn::Tilt);
-
+	// Bind input actions to their functions using their wanted states
 	InputComponent->BindAction("Jump", IE_Pressed, this, &ABallPawn::Jump);
 	InputComponent->BindAction("Boost", IE_Pressed, this, &ABallPawn::OnBeginBoost);
 	InputComponent->BindAction("Boost", IE_Released, this, &ABallPawn::OnEndBoost);
 }
 
+// Move the pawn forwards / back by adding a force that is equal to the current forward vector * the roll impulse scaled by the axis input value -1 to 1
 void ABallPawn::MoveForward(float AxisValue)
 {
 	const FVector force = FVector(AxisValue * ForwardVector) * RollImpulse;
-	Sphere->AddForce(force);
+	Sphere->AddForce(force); // Add force to the sphere
 }
 
+// Move the pawn to the right / left by getting the current right vector and roll impulse and again scaling the axis input of -1 to 1
 void ABallPawn::MoveRight(float AxisValue)
 {
 	const FVector force = FVector(AxisValue * RightVector) * RollImpulse;
-	Sphere->AddForce(force);
+	Sphere->AddForce(force); // Add force to the sphere
 }
 
+// Turn the camera by using the input axis value
+// Rotating a camera boom and not the camera itself so collision and offset remains the same
 void ABallPawn::Turn(float AxisValue)
 {
 	// Rotating the camera
@@ -149,25 +157,28 @@ void ABallPawn::Turn(float AxisValue)
 	// Rotating the arrow so the ball moves the way it is facing
 	PlayerRotation = FacingArrow->GetComponentRotation();
 	PlayerRotation.Yaw += AxisValue;
-	FacingArrow->SetRelativeRotation(PlayerRotation);
+	FacingArrow->SetRelativeRotation(PlayerRotation); // Once the facing arrow rotation is calculated, set its rotation
 }
 
+// Tilt the camera (pitch) using the inputted axis value
+// The amount that the camera can tilt should be limited
 void ABallPawn::Tilt(float AxisValue)
 {
+	float TiltLimit = 45.0f;
 	FRotator PlayerRotation = CameraBoom->GetComponentRotation();
-	if (PlayerRotation.Pitch >= -45.0f && PlayerRotation.Pitch <= 45.0f)
+	if (PlayerRotation.Pitch >= -TiltLimit && PlayerRotation.Pitch <= TiltLimit) // If the current pitch is between the negative and positive limits
 	{
-		PlayerRotation.Pitch += AxisValue;
-		if (PlayerRotation.Pitch > 45.0f)
+		PlayerRotation.Pitch += AxisValue; // Add the axis value to the pitch (tilt)
+		if (PlayerRotation.Pitch > TiltLimit)
 		{
-			PlayerRotation.Pitch = 45.0f;
+			PlayerRotation.Pitch = TiltLimit; // If it is now over the limit, set it to the limit
 		}
-		else if (PlayerRotation.Pitch < -45.0f)
+		else if (PlayerRotation.Pitch < -TiltLimit)
 		{
-			PlayerRotation.Pitch = -45.0f;
+			PlayerRotation.Pitch = -TiltLimit; // Set to negative limit if below the negative limit
 		}
 	}
-	CameraBoom->SetRelativeRotation(PlayerRotation);
+	CameraBoom->SetRelativeRotation(PlayerRotation); // Set the camera rotation to the new rotation
 }
 
 // If the player can jump or can double jump and has only jumped once then let them jump
@@ -175,15 +186,15 @@ void ABallPawn::Jump()
 {
 	if (bCanJump)
 	{
-		const FVector Impulse = FVector(FacingArrow->GetUpVector() * JumpImpulse);
-		Sphere->AddImpulse(Impulse);
+		const FVector Impulse = FVector(FacingArrow->GetUpVector() * JumpImpulse); // Add the jump impulse to the current up vector of the sphere
+		Sphere->AddImpulse(Impulse);												// Use the facing arrow as the sphere iself rotates around using physics so will not have the actual up vector
 		if (bHasJumped)
 		{
-			bCanJump = false;
+			bCanJump = false; // Once the ball has jumped, until it lands it cannot jump again
 		}
 		else
 		{
-			bHasJumped = true;
+			bHasJumped = true; // The ball has now jumped and as in the air, the ball can double jump so bCanJump still remains true
 		}
 
 	}
@@ -195,21 +206,22 @@ void ABallPawn::NotifyHit(class UPrimitiveComponent* MyComp, class AActor* Other
 {
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
 	
+	// If the ball has hit a gravity pad, then the physics needs to be changed
 	if (!Sphere->IsGravityEnabled() && Hit.IsValidBlockingHit() && Other->ActorHasTag("GravityPad"))
 	{
-		bCanJump = false;
-		SetGravity(false);
-		GravityVector = (NormalImpulse);
+		bCanJump = false; // The ball cannot jump on gravity pads to remove issues
+		SetGravity(false); // Gravity should no longer affect the ball as it will be changing directions
+		GravityVector = (NormalImpulse); // The normal impulse becomes the gravity vector once we ensure that it is normalised
 		GravityVector.Normalize();
-		GravityVector *= -1.0f;
-		Sphere->AddForce(GravityVector *= (980.0f));
+		GravityVector *= -1.0f; // Invert the gravity vector
+		Sphere->AddForce(GravityVector *= (980.0f)); // Add a force of Earth gravity in the new gravity vector direction
 		GenerateCrossProduct();
 	}
-	else if (Sphere->IsGravityEnabled() && Hit.IsValidBlockingHit())
+	else if (Sphere->IsGravityEnabled() && Hit.IsValidBlockingHit()) // If a gravity pad was not hit
 	{
-		bCanJump = true;
+		bCanJump = true; // Assume the ball can now jump
 		bHasJumped = true;
-		SetGravity(true);
+		SetGravity(true); // The gravity is set to true as we are not currently using a gravity pad
 	}
 
 }
@@ -232,17 +244,19 @@ void ABallPawn::OnEndBoost()
 	bIsBoosting = false;
 }
 
-
+// Add impulse to the ball using the passed vector
 void ABallPawn::AddImpulse(FVector VectorImpulse)
 {
 	Sphere->AddImpulse(VectorImpulse);
 }
 
+// Set the roll impulse of the ball
 void ABallPawn::SetRollImpulse(float Impulse)
 {
 	RollImpulse = Impulse;
 }
 
+// Set the new jump impulse
 void ABallPawn::SetJumpImpulse(float Impulse)
 {
 	JumpImpulse = Impulse;
@@ -271,6 +285,7 @@ void ABallPawn::AddGravityVector()
 	}
 }
 
+// Remove a gravity vector from the ones currently affecting the ball
 void ABallPawn::RemoveGravityVector()
 {
 	GravityForces--;
@@ -280,17 +295,20 @@ void ABallPawn::RemoveGravityVector()
 	}
 }
 
+// Remove all gravity vectors and use normal gravity again
 void ABallPawn::EmptyGravityVector()
 {
 	GravityForces = 0;
 	Sphere->SetEnableGravity(true);
 }
 
+// Add a forward vector to the array using the passed vector
 void ABallPawn::AddForwardVector(FVector ForwardVector)
 {
 	ForwardVectorArray.Add(ForwardVector);
 }
 
+// If the passed vector exists in the forward array, then remove it
 void ABallPawn::RemoveForwardVector(FVector ForwardVector)
 {
 	if (ForwardVectorArray.Contains(ForwardVector))
@@ -353,16 +371,19 @@ void ABallPawn::GenerateCrossProduct()
 	ForwardVector.Normalize();
 }
 
+// Return the current roll impulse
 float ABallPawn::GetRollImpulse()
 {
 	return RollImpulse;
 }
 
+// Return the current jump impulse
 float ABallPawn::GetJumpImpulse()
 {
 	return JumpImpulse;
 }
 
+// Return whether or not the ball is boosting
 bool ABallPawn::GetIsBoosting()
 {
 	return bIsBoosting;
